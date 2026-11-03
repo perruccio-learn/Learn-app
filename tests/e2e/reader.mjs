@@ -193,6 +193,24 @@ await A.page.fill('#pop-note', 'Key definition: review the axioms');
 await A.page.click('#pop-done');
 check('popover closes', await A.page.$eval('#popover', (e) => e.hidden));
 
+// 3b. Resize from the top-left grip (grows up/left) and close with Ctrl+Enter
+await A.page.click('.page[data-page-number="1"] .hl-text', { force: true });
+await A.page.waitForSelector('#popover:not([hidden])');
+check('popover keeps the saved note', (await A.page.inputValue('#pop-note')) === 'Key definition: review the axioms');
+const popBefore = await A.page.evaluate(() => ({ h: document.querySelector('#pop-note').offsetHeight, w: document.querySelector('#popover').offsetWidth }));
+const grip = await A.page.$eval('#pop-grip', (e) => e.getBoundingClientRect().toJSON());
+await A.page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+await A.page.mouse.down();
+await A.page.mouse.move(grip.x - 60, grip.y - 80, { steps: 5 });
+await A.page.mouse.up();
+const popAfter = await A.page.evaluate(() => ({ h: document.querySelector('#pop-note').offsetHeight, w: document.querySelector('#popover').offsetWidth }));
+check('dragging the grip up/left enlarges the note box', popAfter.h >= popBefore.h + 70 && popAfter.w >= popBefore.w + 50, JSON.stringify({ popBefore, popAfter }));
+check('note box size is remembered', (await A.page.evaluate(() => JSON.parse(localStorage.getItem('learnreader:popSize'))?.h)) === popAfter.h);
+await A.page.focus('#pop-note');
+await A.page.keyboard.press('Control+Enter');
+check('Ctrl+Enter closes the popover', await A.page.$eval('#popover', (e) => e.hidden));
+check('Ctrl+Enter adds no newline to the note', (await A.page.evaluate(() => document.querySelector('#pop-note').value)) === 'Key definition: review the axioms');
+
 // 4. Area highlight on page 2
 await A.page.fill('#page-input', '2');
 await A.page.press('#page-input', 'Enter');

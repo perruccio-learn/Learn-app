@@ -21,7 +21,7 @@
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <link rel="stylesheet" href="vendor/pdfjs/web/pdf_viewer.css">
   <link rel="stylesheet" href="vendor/katex/katex.min.css">
-  <link rel="stylesheet" href="css/app.css?v=618e88174c27">
+  <link rel="stylesheet" href="css/app.css?v=918af12964b6">
 </head>
 <body data-view="">
   <svg class="sprite" width="0" height="0" aria-hidden="true">
@@ -327,22 +327,23 @@
     </div>
 
     <div id="popover" class="popover" role="dialog" aria-label="Annotation" hidden>
+      <div id="pop-grip" class="pop-grip" title="Drag to resize" aria-hidden="true"></div>
       <div class="pop-head">
         <span id="pop-meta" class="pop-meta"></span>
         <span class="pop-colors"></span>
         <button type="button" class="icon-btn" id="pop-close" aria-label="Close"><svg class="icon"><use href="#i-close"/></svg></button>
       </div>
       <blockquote id="pop-quote" class="pop-quote" hidden></blockquote>
-      <textarea id="pop-note" class="pop-note" rows="3" placeholder="Write a note…"></textarea>
+      <textarea id="pop-note" class="pop-note" rows="5" placeholder="Write a note…" aria-keyshortcuts="Control+Enter Meta+Enter"></textarea>
       <div class="pop-foot">
         <button type="button" class="btn btn-ghost btn-danger-text" id="pop-delete">Delete</button>
-        <button type="button" class="btn btn-primary" id="pop-done">Done</button>
+        <button type="button" class="btn btn-primary" id="pop-done" title="Done (Ctrl+Enter)">Done</button>
       </div>
     </div>
   </section>
 
   <div id="toasts" class="toasts" aria-live="polite"></div>
 
-  <script type="module" src="js/app.js?v=618e88174c27"></script>
+  <script type="module" src="js/app.js?v=918af12964b6"></script>
 </body>
 </html>

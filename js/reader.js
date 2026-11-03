@@ -3,8 +3,8 @@
 // Annotation geometry is stored as fractions of the page box ([x, y, w, h] in
 // 0..1), so it is independent of zoom level and device.
 
-import { $, el, debounce, clamp, isNarrow, prettyName, storage, toast, uid } from './util.js?v=618e88174c27';
-import { liveAnnotations } from './sync.js?v=618e88174c27';
+import { $, el, debounce, clamp, isNarrow, prettyName, storage, toast, uid } from './util.js?v=918af12964b6';
+import { liveAnnotations } from './sync.js?v=918af12964b6';
 
 export const COLORS = ['yellow', 'green', 'blue', 'pink'];
 const COLOR_LABELS = { yellow: 'Yellow', green: 'Green', blue: 'Blue', pink: 'Pink' };
@@ -742,9 +742,52 @@ export class Reader {
     }
     const note = $('#pop-note');
     note.addEventListener('input', () => this.activeId && this.saveNote(this.activeId, note.value));
+    note.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.isComposing) {
+        e.preventDefault();
+        this.closePopover();
+      }
+    });
+    this._setupPopoverResize();
     $('#pop-delete').addEventListener('click', () => this.activeId && this._delete(this.activeId));
     $('#pop-done').addEventListener('click', () => this.closePopover());
     $('#pop-close').addEventListener('click', () => this.closePopover());
+  }
+
+  // Drag the top-left grip: the popover is anchored bottom-right, so dragging up/left makes it bigger.
+  _setupPopoverResize() {
+    const pop = $('#popover');
+    const note = $('#pop-note');
+    const grip = $('#pop-grip');
+    const KEY = 'learnreader:popSize';
+    const narrow = () => matchMedia('(max-width: 720px)').matches;
+    const apply = (size) => {
+      if (!size) return;
+      const h = Number(size.h);
+      const w = Number(size.w);
+      if (Number.isFinite(h)) note.style.height = `${Math.round(Math.min(Math.max(h, 76), innerHeight * 0.7))}px`;
+      if (Number.isFinite(w) && !narrow()) pop.style.width = `${Math.round(Math.min(Math.max(w, 300), innerWidth - 32))}px`;
+    };
+    apply(storage.get(KEY));
+    grip.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      grip.setPointerCapture(e.pointerId);
+      const start = { x: e.clientX, y: e.clientY, w: pop.offsetWidth, h: note.offsetHeight };
+      const move = (ev) => apply({ h: start.h + (start.y - ev.clientY), w: start.w + (start.x - ev.clientX) });
+      const end = () => {
+        grip.removeEventListener('pointermove', move);
+        grip.removeEventListener('pointerup', end);
+        grip.removeEventListener('pointercancel', end);
+        const size = { h: note.offsetHeight };
+        if (!narrow()) size.w = pop.offsetWidth;
+        else size.w = storage.get(KEY)?.w;
+        storage.set(KEY, size);
+      };
+      grip.addEventListener('pointermove', move);
+      grip.addEventListener('pointerup', end);
+      grip.addEventListener('pointercancel', end);
+    });
   }
 
   _syncPopoverColors(color) {

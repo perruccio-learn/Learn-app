@@ -419,15 +419,27 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0
 /* popover */
 .popover {
   position: absolute; z-index: 32; right: 16px; bottom: calc(16px + var(--safe-bottom));
-  width: min(380px, calc(100% - 32px));
+  width: min(480px, calc(100% - 32px)); max-width: calc(100% - 32px);
   background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow);
   padding: 12px 14px 14px; display: grid; gap: 10px;
 }
+/* The popover is anchored bottom-right, so it grows from the top-left corner. */
+.pop-grip {
+  position: absolute; top: 0; left: 0; width: 22px; height: 22px; cursor: nwse-resize; touch-action: none;
+  border-top-left-radius: 16px;
+}
+.pop-grip::before {
+  content: ''; position: absolute; top: 6px; left: 6px; width: 8px; height: 8px;
+  border-top: 2px solid var(--muted); border-left: 2px solid var(--muted); border-top-left-radius: 3px; opacity: 0.6;
+}
+.pop-grip:hover::before { opacity: 1; }
 @media (min-width: 900px) {
   #view-reader.panel-open .popover { right: calc(var(--panel-w) + 16px); }
 }
 @media (max-width: 720px) {
-  .popover { left: 0; right: 0; bottom: 0; width: 100%; border-radius: 18px 18px 0 0; padding-bottom: calc(14px + var(--safe-bottom)); }
+  .popover { left: 0; right: 0; bottom: 0; width: 100% !important; max-width: none; border-radius: 18px 18px 0 0; padding-bottom: calc(14px + var(--safe-bottom)); padding-top: 18px; }
+  .pop-grip { left: 50%; width: 56px; height: 18px; margin-left: -28px; cursor: ns-resize; border-radius: 0; }
+  .pop-grip::before { top: 6px; left: 12px; width: 32px; height: 4px; border: 0; border-radius: 2px; background: var(--muted); }
 }
 .pop-head { display: flex; align-items: center; gap: 8px; }
 .pop-meta { flex: 1; font-size: 12px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
@@ -437,7 +449,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0
   max-height: 6.2em; overflow: auto;
 }
 .pop-note {
-  width: 100%; resize: vertical; min-height: 76px; padding: 10px 12px; border-radius: 10px;
+  width: 100%; resize: none; height: 150px; min-height: 76px; max-height: 70vh; padding: 10px 12px; border-radius: 10px;
   border: 1px solid var(--line); background: var(--bg); font-size: 15px; line-height: 1.4;
 }
 .pop-note:focus { outline: 2px solid var(--accent); outline-offset: -1px; }

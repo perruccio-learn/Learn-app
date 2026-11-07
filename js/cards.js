@@ -8,7 +8,7 @@
 // like annotations.
 
 import { fsrs, generatorParameters, createEmptyCard, Rating, State } from '../vendor/ts-fsrs/ts-fsrs.mjs';
-import { dirName, storage } from './util.js?v=9c8a4739a284';
+import { dirName, storage } from './util.js?v=3a2f9149a48a';
 
 export { Rating, State };
 

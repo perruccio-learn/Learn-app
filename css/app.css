@@ -273,7 +273,13 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0
   padding-bottom: calc(24px + var(--safe-bottom));
 }
 #viewer.pdfViewer { transition: none; }
-.pdfViewer .page { --page-border: 9px; }
+/* Pages as separate sheets: a gap and a soft shadow, so page breaks are visible. */
+.pdfViewer .page {
+  --page-border: 0 solid transparent;
+  margin: 0 auto 14px;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.18), 0 0 0 1px rgb(0 0 0 / 0.06);
+}
+.pdfViewer .page:first-child { margin-top: 14px; }
 
 /* panel docked on wide screens */
 @media (min-width: 900px) {

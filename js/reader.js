@@ -3,8 +3,8 @@
 // Annotation geometry is stored as fractions of the page box ([x, y, w, h] in
 // 0..1), so it is independent of zoom level and device.
 
-import { $, el, debounce, clamp, isNarrow, prettyName, storage, toast, uid } from './util.js?v=918af12964b6';
-import { liveAnnotations } from './sync.js?v=918af12964b6';
+import { $, el, debounce, clamp, isNarrow, prettyName, storage, toast, uid } from './util.js?v=9c8a4739a284';
+import { liveAnnotations } from './sync.js?v=9c8a4739a284';
 
 export const COLORS = ['yellow', 'green', 'blue', 'pink'];
 const COLOR_LABELS = { yellow: 'Yellow', green: 'Green', blue: 'Blue', pink: 'Pink' };
@@ -196,11 +196,13 @@ export class Reader {
         isEvalSupported: false,
         enableXfa: false,
       }).promise;
+      const pageLabels = await this._loadPageLabels(pdf);
       if (this.book !== file.path) {
         pdf.destroy();
         return;
       }
       this.pdf = pdf;
+      this.pageLabels = pageLabels;
       this.findQuery = ''; // a new document starts a fresh search
       $('#find-status').textContent = '';
       this._createViewer();
@@ -894,14 +896,44 @@ export class Reader {
     const last = this.jumps[this.jumps.length - 1];
     btn.hidden = !last;
     if (!last) return;
-    $('#jump-back-label').textContent = `p. ${last.page}`;
-    btn.title = `Back to page ${last.page} (Alt+←)`;
-    btn.setAttribute('aria-label', `Back to page ${last.page}`);
+    const label = this.pageLabel(last.page);
+    $('#jump-back-label').textContent = `p. ${label}`;
+    btn.title = `Back to page ${label} (Alt+←)`;
+    btn.setAttribute('aria-label', `Back to page ${label}`);
+  }
+
+  // Printed page numbers from the PDF's standard /PageLabels (e.g. "xii", "1"), so typing 1 goes to
+  // the book's page 1, not the cover. Page numbers stored and linked elsewhere stay physical.
+  async _loadPageLabels(pdf) {
+    try {
+      const labels = await pdf.getPageLabels();
+      if (!Array.isArray(labels) || labels.length !== pdf.numPages) return null;
+      const clean = labels.map((l) => (typeof l === 'string' ? l.trim().slice(0, 16) : ''));
+      return clean.every((l, i) => l === String(i + 1)) ? null : clean;
+    } catch {
+      return null;
+    }
+  }
+
+  pageLabel(pageNumber) {
+    return this.pageLabels?.[pageNumber - 1] || String(pageNumber);
+  }
+
+  // A typed value is a printed label first; otherwise a physical page number.
+  _pageFromInput(value) {
+    const v = value.trim();
+    if (this.pageLabels) {
+      const i = this.pageLabels.findIndex((l) => l.toLowerCase() === v.toLowerCase());
+      if (i >= 0) return i + 1;
+    }
+    return clamp(parseInt(v, 10) || 1, 1, this.pdf.numPages);
   }
 
   _updatePageIndicator(pageNumber) {
     const input = $('#page-input');
-    if (document.activeElement !== input) input.value = pageNumber;
+    if (document.activeElement !== input) input.value = this.pageLabel(pageNumber);
+    const box = input.closest('.page-box');
+    if (box) box.title = this.pageLabels ? `PDF page ${pageNumber} of ${this.pdf?.numPages ?? ''}` : '';
   }
 
   _updateZoomIndicator(scale, presetValue) {
@@ -930,10 +962,10 @@ export class Reader {
     const input = $('#page-input');
     input.addEventListener('change', () => {
       if (!this.pdf) return;
-      const n = clamp(parseInt(input.value, 10) || 1, 1, this.pdf.numPages);
+      const n = this._pageFromInput(input.value);
       if (n !== this.viewer.currentPageNumber) this._pushJump();
       this.viewer.currentPageNumber = n;
-      input.value = n;
+      input.value = this.pageLabel(n);
       input.blur();
     });
     input.addEventListener('focus', () => input.select());
@@ -1138,7 +1170,7 @@ export class Reader {
             el(
               'span',
               { class: 'ann-body' },
-              el('span', { class: 'ann-meta' }, `p. ${a.page} · ${TYPE_LABELS[a.type] || ''}`),
+              el('span', { class: 'ann-meta' }, `p. ${this.pageLabel(a.page)} · ${TYPE_LABELS[a.type] || ''}`),
               a.text && el('span', { class: 'ann-text' }, a.text),
               a.note && el('span', { class: 'ann-note' }, a.note),
             ),

@@ -397,6 +397,7 @@ await A.page.waitForSelector('#viewer .page[data-page-number="3"]');
 await sleep(800);
 check('deep link opens other book at page 3', Number(await A.page.inputValue('#page-input')) === 3);
 
+
 // 11b. Bookmarks and resume: the saved position wins over the page in the link
 await A.page.click('#btn-bookmark');
 await A.page.waitForSelector('#popover:not([hidden])');
@@ -510,6 +511,25 @@ check('no JS errors on D', D.errors.length === 0, D.errors.join(' | '));
 const C = await newDevice(browser, { ...devices['iPhone 13'], colorScheme: 'dark' });
 await setup(C.page);
 await C.page.screenshot({ path: `${SHOTS}/07-phone-library-dark.png` });
+
+// 11a. Printed page labels (/PageLabels): the box shows and accepts the book's numbering; links stay physical
+putRepo('math/books/labeled.pdf', fs.readFileSync(path.join(FIXTURES, 'book-labels.pdf'))); // /PageLabels i, ii, 1..4
+const E = await newDevice(browser, { viewport: { width: 1280, height: 860 } });
+await setup(E.page);
+await openBook(E.page, '#read=math/books/labeled.pdf&page=3');
+await E.page.waitForSelector('#viewer .page[data-page-number="3"]');
+await sleep(800);
+check('page box shows the printed label', (await E.page.inputValue('#page-input')) === '1', await E.page.inputValue('#page-input'));
+await E.page.fill('#page-input', '2');
+await E.page.press('#page-input', 'Enter');
+await sleep(500);
+const p4Top = await E.page.$eval('.page[data-page-number="4"]', (e) => e.getBoundingClientRect().top - document.querySelector('#viewerContainer').getBoundingClientRect().top);
+check('typing a label goes to its page', (await E.page.inputValue('#page-input')) === '2' && Math.abs(p4Top) < 40, `${await E.page.inputValue('#page-input')} top ${p4Top}`);
+await E.page.fill('#page-input', 'ii');
+await E.page.press('#page-input', 'Enter');
+await sleep(500);
+check('roman labels work too', (await E.page.inputValue('#page-input')) === 'ii', await E.page.inputValue('#page-input'));
+check('no JS errors on E', E.errors.length === 0, E.errors.join(' | '));
 
 fs.writeFileSync(`${SHOTS}/remote.json`, repo.get('math/books/axler-ladr-4ed.annotations.json').buf);
 await browser.close();

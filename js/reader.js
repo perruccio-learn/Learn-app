@@ -3,8 +3,8 @@
 // Annotation geometry is stored as fractions of the page box ([x, y, w, h] in
 // 0..1), so it is independent of zoom level and device.
 
-import { $, el, debounce, clamp, isNarrow, prettyName, storage, toast, uid } from './util.js?v=3a2f9149a48a';
-import { liveAnnotations } from './sync.js?v=3a2f9149a48a';
+import { $, el, debounce, clamp, isNarrow, prettyName, storage, toast, uid } from './util.js?v=8972dd6ccb9d';
+import { liveAnnotations } from './sync.js?v=8972dd6ccb9d';
 
 export const COLORS = ['yellow', 'green', 'blue', 'pink'];
 const COLOR_LABELS = { yellow: 'Yellow', green: 'Green', blue: 'Blue', pink: 'Pink' };

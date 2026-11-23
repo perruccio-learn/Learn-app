@@ -235,6 +235,19 @@ await sleep(700);
 check('popover still open after typing (no stray click close)', await A.page.$eval('#popover', (e) => !e.hidden));
 await A.page.keyboard.press('Escape');
 await A.page.waitForSelector('.page[data-page-number="2"] .note-pin');
+// The pin sits above PDF.js's text and link layers: wherever it is clicked, it opens its note
+const pinOnTop = await A.page.evaluate(() => {
+  const pin = document.querySelector('.page[data-page-number="2"] .note-pin');
+  const r = pin.getBoundingClientRect();
+  const pts = [[0.5, 0.5], [0.15, 0.15], [0.85, 0.85], [0.15, 0.85], [0.85, 0.15]];
+  return pts.every(([fx, fy]) => document.elementFromPoint(r.left + r.width * fx, r.top + r.height * fy)?.closest('.note-pin') === pin);
+});
+check('note pin is on top of the text layer', pinOnTop);
+await A.page.click('.page[data-page-number="2"] .note-pin');
+await A.page.waitForSelector('#popover:not([hidden])');
+check('clicking the note pin opens its note', (await A.page.inputValue('#pop-note')) === 'Exercise 3 unclear');
+await A.page.keyboard.press('Escape');
+await A.page.waitForSelector('#popover', { state: 'hidden' });
 
 // 6. Panel lists annotations; outline present
 await A.page.click('#btn-panel');

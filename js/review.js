@@ -1,6 +1,6 @@
 // Flashcard review session (spaced repetition with FSRS).
 
-import { $, el, clamp, toast } from './util.js?v=8972dd6ccb9d';
+import { $, el, clamp, toast } from './util.js?v=3974aaa3e5ae';
 import {
   NEW_PER_DAY,
   Rating,
@@ -13,9 +13,10 @@ import {
   isNew,
   newIntroducedToday,
   renderRich,
+  reviewsToday,
   scheduler,
   toFsrsCard,
-} from './cards.js?v=8972dd6ccb9d';
+} from './cards.js?v=3974aaa3e5ae';
 
 const RATINGS = [
   { rating: Rating.Again, label: 'Again', key: '1', cls: 'again' },
@@ -81,10 +82,15 @@ export class ReviewSession {
     const learning = [];
     const reviews = [];
     const fresh = [];
+    const waiting = [];
     const newLeft = {};
+    let doneToday = 0;
     for (const card of decks.cards) {
       const doc = this.sync.load(card.dir).doc;
-      newLeft[card.dir] ??= Math.max(0, NEW_PER_DAY - newIntroducedToday(doc, now));
+      if (!(card.dir in newLeft)) {
+        newLeft[card.dir] = Math.max(0, NEW_PER_DAY - newIntroducedToday(doc, now));
+        doneToday += reviewsToday(doc, now);
+      }
       const s = doc.cards[card.id];
       if (isNew(s)) {
         if (newLeft[card.dir] > 0) {
@@ -92,7 +98,11 @@ export class ReviewSession {
           fresh.push(card);
         }
       } else if (isDue(s, now)) {
-        (s.state === State.Review ? reviews : learning).push(card);
+        if (s.state === State.Review) reviews.push(card);
+        else if (s.due <= now) learning.push(card);
+        // Rated a few minutes ago (e.g. before closing the page): it comes back when its step is up,
+        // as it would have in the same session, instead of restarting the review from these cards.
+        else waiting.push({ card, readyAt: s.due });
       }
     }
     // Interleave: learning first, then reviews from all decks shuffled, with a new card every 3 reviews.
@@ -104,9 +114,10 @@ export class ReviewSession {
       else mixed.push(rev.shift());
       n++;
     }
-    this.queue = [...learning, ...mixed].map((card) => ({ card, readyAt: 0 }));
+    waiting.sort((a, b) => a.readyAt - b.readyAt);
+    this.queue = [...[...learning, ...mixed].map((card) => ({ card, readyAt: 0 })), ...waiting];
     this.history = [];
-    this.done = 0;
+    this.done = doneToday; // continue today's count across openings and devices
     this._next();
   }
 
@@ -170,7 +181,7 @@ export class ReviewSession {
       },
       { silent: true },
     );
-    if (this.current) last.queue.unshift({ card: this.current, readyAt: 0 });
+    // The snapshot was taken before the next card was drawn, so it already holds the current card.
     this.queue = last.queue;
     this.current = card;
     this.revealed = false;
@@ -229,12 +240,12 @@ export class ReviewSession {
     const card = this.current;
     $('#review-undo').disabled = this.history.length === 0;
     const remaining = this.queue.length + (card ? 1 : 0);
-    $('#review-count').textContent = card ? `${remaining} left · ${this.done} done` : '';
+    $('#review-count').textContent = card ? `${remaining} left · ${this.done} done today` : '';
     $('#review-done').hidden = !!card;
     $('#review-stage').hidden = !card;
     if (!card) {
       $('#review-done-text').textContent =
-        this.done === 0 ? 'Nothing to review right now.' : `You reviewed ${this.done} ${this.done === 1 ? 'card' : 'cards'}.`;
+        this.done === 0 ? 'Nothing to review right now.' : `You reviewed ${this.done} ${this.done === 1 ? 'card' : 'cards'} today.`;
       return;
     }
     const doc = this.sync.load(card.dir).doc;

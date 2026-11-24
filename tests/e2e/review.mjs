@@ -100,6 +100,23 @@ const after1 = await A.page.textContent('#review-count');
 await A.page.click('#review-undo');
 await sleep(100);
 check('undo brings back the same card', (await A.page.textContent('#review-front')) === firstFront);
+check('undo does not duplicate the next card', (await A.page.textContent('#review-count')).startsWith(`${fresh} left`), await A.page.textContent('#review-count'));
+// Leaving and reopening the review continues it: cards just rated are not shown again first, and today's count goes on
+const rated = [];
+for (let k = 0; k < 3; k++) {
+  rated.push(await A.page.textContent('#review-front'));
+  await A.page.click('#review-show'); // not Space: the focused undo button would also be clicked
+  await A.page.waitForSelector('#review-ratings:not([hidden])');
+  await A.page.keyboard.press('3');
+  await sleep(50);
+}
+await A.page.keyboard.press('Escape');
+await A.page.waitForSelector('#rv-start');
+await A.page.click('#rv-start');
+await A.page.waitForSelector('#review-stage:not([hidden])');
+const resumedFront = await A.page.textContent('#review-front');
+check('reopened review continues with cards not yet done', !rated.includes(resumedFront), resumedFront.slice(0, 60));
+check('reopened review keeps today\'s count', new RegExp(`^${fresh} left · 3 done today`).test(await A.page.textContent('#review-count')), await A.page.textContent('#review-count'));
 // Answer everything with Good (Again only on the first card)
 let guard = 0;
 let first = true;

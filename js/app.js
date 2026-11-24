@@ -1,15 +1,15 @@
 // App shell: configuration, routing, library and sync triggers.
 
-import { $, el, debounce, dirName, formatSize, prettyName, storage, toast } from './util.js?v=3974aaa3e5ae';
-import { GitHub } from './github.js?v=3974aaa3e5ae';
-import { SyncManager, liveAnnotations, migrateLegacyStorage } from './sync.js?v=3974aaa3e5ae';
-import { Reader, isPdfCached } from './reader.js?v=3974aaa3e5ae';
-import { loadDecks, loadMath, parseProgress, progressCodec, readText, tickSession } from './cards.js?v=3974aaa3e5ae';
-import { ReviewSession, summarize } from './review.js?v=3974aaa3e5ae';
-import { Course, inSubject, progressBar, skipOf, stateCodec, subjectOf, subjectsOf } from './course.js?v=3974aaa3e5ae';
+import { $, el, debounce, dirName, formatSize, prettyName, storage, toast } from './util.js?v=3046ab5f78c9';
+import { GitHub } from './github.js?v=3046ab5f78c9';
+import { SyncManager, liveAnnotations, migrateLegacyStorage } from './sync.js?v=3046ab5f78c9';
+import { Reader, isPdfCached } from './reader.js?v=3046ab5f78c9';
+import { loadDecks, loadMath, parseProgress, progressCodec, readText, tickSession } from './cards.js?v=3046ab5f78c9';
+import { ReviewSession, summarize } from './review.js?v=3046ab5f78c9';
+import { Course, inSubject, progressBar, skipOf, stateCodec, subjectOf, subjectsOf } from './course.js?v=3046ab5f78c9';
 
 // Stamped by scripts/stamp.py on every release (do not edit by hand).
-const APP_VERSION = '3974aaa3e5ae';
+const APP_VERSION = '3046ab5f78c9';
 const CONFIG_KEY = 'learnreader:config';
 const MAX_UPLOAD_BYTES = 95 * 1024 * 1024;
 
@@ -495,6 +495,8 @@ function drawReviewPanel(decks) {
       : 'All reviewed for today.'
     : 'A session’s cards unlock when you mark it as done.';
   $('#rv-start').classList.toggle('is-disabled', s.due + s.fresh === 0);
+  $('#rv-trash').hidden = s.trashed === 0;
+  $('#rv-trash-text').textContent = `Trash (${s.trashed})`;
 }
 
 // ------------------------------------------------------------------ home: one card per subject
@@ -738,6 +740,13 @@ async function syncNow() {
 
 function bindGlobal() {
   for (const pill of document.querySelectorAll('[data-sync-pill]')) pill.addEventListener('click', syncNow);
+  $('#rv-trash').addEventListener('click', async () => {
+    if (!app.review || !app.decks) return;
+    await app.review.trash.open(app.decks);
+  });
+  $('#trash-dialog').addEventListener('close', () => {
+    if (app.decks && document.body.dataset.view === 'library') drawReviewPanel(app.decks);
+  });
   $('#lib-search').addEventListener('input', debounce(drawLibrary, 120));
   document.querySelector('.loading-back').addEventListener('click', (e) => {
     e.preventDefault();

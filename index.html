@@ -21,7 +21,7 @@
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <link rel="stylesheet" href="vendor/pdfjs/web/pdf_viewer.css">
   <link rel="stylesheet" href="vendor/katex/katex.min.css">
-  <link rel="stylesheet" href="css/app.css?v=3974aaa3e5ae">
+  <link rel="stylesheet" href="css/app.css?v=3046ab5f78c9">
 </head>
 <body data-view="">
   <svg class="sprite" width="0" height="0" aria-hidden="true">
@@ -42,6 +42,7 @@
       <symbol id="i-close" viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></symbol>
       <symbol id="i-cards" viewBox="0 0 24 24"><rect x="6.5" y="3.5" width="13" height="16" rx="2"/><path d="M4.5 7v11.5a2 2 0 0 0 2 2H15"/><path d="M10 9.5h6M10 13h4"/></symbol>
       <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 7.5L5 11.5l4 4"/><path d="M5 11.5h9.5a4.5 4.5 0 0 1 0 9H12"/></symbol>
+      <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 12.5h9l1-12.5M10 10.5v6M14 10.5v6"/></symbol>
       <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
       <symbol id="i-path" viewBox="0 0 24 24"><circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="6" r="2.2"/><path d="M8.2 18H15a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h6.8"/></symbol>
       <symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M7 4.5h10v15l-5-4-5 4z"/></symbol>
@@ -154,6 +155,7 @@
           <p class="muted small" id="rv-decks"></p>
           <div class="panel-actions">
             <a class="btn btn-primary" id="rv-start" href="#review"><svg class="icon"><use href="#i-cards"/></svg>Start review</a>
+            <button type="button" class="btn btn-ghost" id="rv-trash" hidden><svg class="icon"><use href="#i-trash"/></svg><span id="rv-trash-text">Trash</span></button>
           </div>
         </div>
       </section>
@@ -204,6 +206,7 @@
       </div>
       <div class="tb-group tb-center"><span class="review-count" id="review-count"></span></div>
       <div class="tb-group tb-right">
+        <button type="button" class="icon-btn" id="review-trash" title="Move this card to the trash (Delete)" aria-label="Move this card to the trash"><svg class="icon"><use href="#i-trash"/></svg></button>
         <button type="button" class="icon-btn" id="review-undo" title="Undo the last answer (Z)" aria-label="Undo the last answer"><svg class="icon"><use href="#i-undo"/></svg></button>
         <button type="button" class="sync-pill compact" data-sync-pill title="Sync now"><svg class="icon"><use href="#i-sync"/></svg><span class="sync-text">Synced</span></button>
       </div>
@@ -224,7 +227,11 @@
       <div id="review-done" class="review-done" hidden>
         <svg class="done-mark"><use href="#i-check"/></svg>
         <p id="review-done-text"></p>
-        <button type="button" class="btn btn-primary" id="review-finish">Done</button>
+        <div class="panel-actions">
+          <button type="button" class="btn btn-primary" id="review-finish">Done</button>
+          <button type="button" class="btn btn-ghost" id="review-early" hidden>Review them now</button>
+          <button type="button" class="btn btn-ghost" id="review-open-trash" hidden>Trash</button>
+        </div>
       </div>
     </main>
   </section>
@@ -342,8 +349,20 @@
     </div>
   </section>
 
+  <!-- Flashcard trash: opened from the library and from the review, so outside both views -->
+  <dialog id="trash-dialog" class="dialog trash-dialog">
+    <h2>Trash</h2>
+    <p class="muted small">Cards in the trash keep their progress but never come up in review. Restore a card to review it again.</p>
+    <p class="muted" id="trash-empty">The trash is empty.</p>
+    <ul class="trash-list" id="trash-list"></ul>
+    <div class="form-actions">
+      <button type="button" class="btn btn-ghost" id="trash-restore-all" hidden>Restore all</button>
+      <button type="button" class="btn btn-primary" id="trash-close">Close</button>
+    </div>
+  </dialog>
+
   <div id="toasts" class="toasts" aria-live="polite"></div>
 
-  <script type="module" src="js/app.js?v=3974aaa3e5ae"></script>
+  <script type="module" src="js/app.js?v=3046ab5f78c9"></script>
 </body>
 </html>

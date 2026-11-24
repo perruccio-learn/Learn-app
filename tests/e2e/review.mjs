@@ -110,6 +110,10 @@ for (let k = 0; k < 3; k++) {
   await A.page.keyboard.press('3');
   await sleep(50);
 }
+// Every answer is pushed at once (another device, or a reopened page, never sees it undone)
+await A.page.waitForFunction(() => document.querySelector('[data-sync-pill]').dataset.state === 'synced', null, { timeout: 15000 });
+const early = JSON.parse(repo.get('math/flashcards/progress.json')?.buf.toString() || '{"cards":[]}');
+check('answers pushed right away, without leaving the review', early.cards.length >= 3, String(early.cards.length));
 await A.page.keyboard.press('Escape');
 await A.page.waitForSelector('#rv-start');
 await A.page.click('#rv-start');
@@ -117,17 +121,67 @@ await A.page.waitForSelector('#review-stage:not([hidden])');
 const resumedFront = await A.page.textContent('#review-front');
 check('reopened review continues with cards not yet done', !rated.includes(resumedFront), resumedFront.slice(0, 60));
 check('reopened review keeps today\'s count', new RegExp(`^${fresh} left · 3 done today`).test(await A.page.textContent('#review-count')), await A.page.textContent('#review-count'));
-// Answer everything with Good (Again only on the first card)
+// Trash: the card leaves the review at once, comes back with Undo, and stays out after reopening
+const trashedFront = await A.page.textContent('#review-front');
+const leftBefore = await A.page.textContent('#review-count');
+await A.page.click('#review-trash');
+await sleep(100);
+check('trashed card leaves the review', (await A.page.textContent('#review-front')) !== trashedFront && parseInt(await A.page.textContent('#review-count')) === parseInt(leftBefore) - 1, await A.page.textContent('#review-count'));
+await A.page.click('.toast-action');
+await sleep(100);
+check('undo from the toast brings the trashed card back', (await A.page.textContent('#review-front')) === trashedFront && parseInt(await A.page.textContent('#review-count')) === parseInt(leftBefore));
+await A.page.keyboard.press('Delete');
+await sleep(100);
+await A.page.keyboard.press('Escape');
+await A.page.waitForSelector('#rv-trash:not([hidden])');
+check('library shows the trash with one card', (await A.page.textContent('#rv-trash')).includes('Trash (1)'), await A.page.textContent('#rv-trash'));
+await A.page.click('#rv-start');
+await A.page.waitForSelector('#review-stage:not([hidden])');
+check('trashed card not in a reopened review', parseInt(await A.page.textContent('#review-count')) === parseInt(leftBefore) - 1, await A.page.textContent('#review-count'));
+await A.page.keyboard.press('Escape');
+await A.page.waitForSelector('#rv-trash:not([hidden])');
+await A.page.waitForFunction(() => document.querySelector('[data-sync-pill]').dataset.state === 'synced', null, { timeout: 15000 });
+const withTrash = JSON.parse(repo.get('math/flashcards/progress.json').buf.toString());
+check('trash pushed to progress.json', withTrash.trash?.filter((t) => t.trashed).length === 1, JSON.stringify(withTrash.trash));
+await A.page.click('#rv-trash');
+await A.page.waitForSelector('#trash-dialog[open] .trash-item');
+check('trash dialog lists the card', (await A.page.$$('.trash-item')).length === 1 && (await A.page.textContent('.trash-front')).length > 3);
+await A.page.screenshot({ path: `${SHOTS}/r3b-trash.png` });
+await A.page.click('.trash-item .btn');
+await A.page.waitForSelector('#trash-empty:not([hidden])');
+await A.page.click('#trash-close');
+await A.page.waitForSelector('#rv-trash', { state: 'hidden' });
+check('restored card leaves the trash', await A.page.$eval('#rv-trash', (e) => e.hidden));
+await A.page.click('#rv-start');
+await A.page.waitForSelector('#review-stage:not([hidden])');
+check('restored card is back in the review', parseInt(await A.page.textContent('#review-count')) === parseInt(leftBefore), await A.page.textContent('#review-count'));
+// Hostile trash entries in progress.json are dropped
+const hostile = await A.page.evaluate(async () => {
+  const { progressCodec } = await import('./js/cards.js');
+  const doc = progressCodec.revive({ cards: [], trash: [{ id: '<img src=x onerror=alert(1)>', trashed: true, updatedAt: 1 }, { id: 'cabc', trashed: 'yes', updatedAt: 1 }, { id: 'cabc', trashed: true, updatedAt: 1, extra: '<script>' }, null, 7] }, 'x/flashcards');
+  return JSON.stringify(doc.trash);
+});
+check('untrusted trash entries sanitized', hostile === '{"cabc":{"id":"cabc","trashed":true,"updatedAt":1}}', hostile);
+
+// Answer everything with Good (Again only on the first card); cards still in their learning step
+// are not shown early: the review waits for them, and "Review them now" takes them at once.
 let guard = 0;
 let first = true;
-while (!(await A.page.$eval('#review-stage', (e) => e.hidden)) && guard++ < 80) {
-  await A.page.keyboard.press('Space');
+let waited = 0;
+while (guard++ < 80) {
+  if (await A.page.$eval('#review-stage', (e) => e.hidden)) {
+    if (await A.page.$eval('#review-early', (e) => e.hidden)) break;
+    waited++;
+    await A.page.click('#review-early');
+    continue;
+  }
+  await A.page.click('#review-show');
   await A.page.waitForSelector('#review-ratings:not([hidden])');
   await A.page.keyboard.press(first ? '1' : '3');
   first = false;
 }
 check('session completes', await A.page.$eval('#review-stage', (e) => e.hidden), `${guard} answers`);
-check('learning cards are re-shown within the session', guard > fresh, `${guard} answers for ${fresh} cards`);
+check('learning cards wait for their step, then come back', waited > 0 && guard > fresh, `${guard} answers for ${fresh} cards, ${waited} waits`);
 const pwned = await A.page.evaluate(() => window.__pwned);
 check('malicious card content not executed', pwned === undefined);
 await A.page.screenshot({ path: `${SHOTS}/r4-done.png` });
@@ -158,7 +212,7 @@ await A.page.waitForFunction(() => document.querySelector('[data-sync-pill]').da
 const prog = repo.get('math/flashcards/progress.json');
 const progJson = prog && JSON.parse(prog.buf.toString());
 check('progress pushed to progress.json', progJson?.cards?.length === fresh, String(progJson?.cards?.length));
-check('progress pushed in few commits', puts.filter((p) => p.includes('progress.json')).length <= 2, String(puts.filter((p) => p.includes('progress.json')).length));
+check('progress pushed after the answers', puts.filter((p) => p.includes('progress.json')).length >= 3, String(puts.filter((p) => p.includes('progress.json')).length));
 
 // Device B (phone) sees A's progress: nothing new left today
 const B = await device({ ...devices['iPhone 13'] });

@@ -1,6 +1,6 @@
 // Flashcard review session (spaced repetition with FSRS).
 
-import { $, el, clamp, toast } from './util.js?v=3974aaa3e5ae';
+import { $, el, clamp, toast } from './util.js?v=3046ab5f78c9';
 import {
   NEW_PER_DAY,
   Rating,
@@ -11,12 +11,14 @@ import {
   humanInterval,
   isDue,
   isNew,
+  isTrashed,
+  loadMath,
   newIntroducedToday,
   renderRich,
   reviewsToday,
   scheduler,
   toFsrsCard,
-} from './cards.js?v=3974aaa3e5ae';
+} from './cards.js?v=3046ab5f78c9';
 
 const RATINGS = [
   { rating: Rating.Again, label: 'Again', key: '1', cls: 'again' },
@@ -35,12 +37,16 @@ function shuffle(list) {
   return a;
 }
 
-/** Counts for the library summary: {due, fresh, total, byDeck: {deck: {due, fresh}}}. */
+/** Counts for the library summary: {due, fresh, total, trashed, byDeck: {deck: {due, fresh}}}. */
 export function summarize(decks, sync, now = Date.now()) {
-  const out = { due: 0, fresh: 0, total: decks.cards.length, byDeck: {} };
+  const out = { due: 0, fresh: 0, total: decks.cards.length, trashed: 0, byDeck: {} };
   const newLeft = {};
   for (const card of decks.cards) {
     const doc = sync.load(card.dir).doc;
+    if (isTrashed(doc, card.id)) {
+      out.trashed++;
+      continue;
+    }
     newLeft[card.dir] ??= Math.max(0, NEW_PER_DAY - newIntroducedToday(doc, now));
     const s = doc.cards[card.id];
     const deck = (out.byDeck[card.deck || card.stem] ??= { due: 0, fresh: 0 });
@@ -68,16 +74,28 @@ export class ReviewSession {
     this.revealed = false;
     this.history = [];
     this.done = 0;
+    this.decks = null;
+    this.waitTimer = null;
+    this.trash = new TrashDialog({ sync, onChange: () => this._render() });
     this._bind();
   }
 
   attach(sync) {
     this.sync = sync;
+    this.trash.sync = sync;
+  }
+
+  /** Leave the review: stop waiting for cards in their learning step. */
+  stop() {
+    clearTimeout(this.waitTimer);
+    this.waitTimer = null;
   }
 
   // ------------------------------------------------------------------ queue
 
   start(decks) {
+    this.stop();
+    this.decks = decks;
     const now = Date.now();
     const learning = [];
     const reviews = [];
@@ -91,6 +109,7 @@ export class ReviewSession {
         newLeft[card.dir] = Math.max(0, NEW_PER_DAY - newIntroducedToday(doc, now));
         doneToday += reviewsToday(doc, now);
       }
+      if (isTrashed(doc, card.id)) continue;
       const s = doc.cards[card.id];
       if (isNew(s)) {
         if (newLeft[card.dir] > 0) {
@@ -121,16 +140,48 @@ export class ReviewSession {
     this._next();
   }
 
-  _next() {
+  /**
+   * Show the next card that is ready. Cards still in their learning step are not shown
+   * early (that made a reopened review start again from the cards just answered): the
+   * review waits for them and goes on by itself, or the user can take them now.
+   */
+  _next({ early = false } = {}) {
+    this.stop();
+    const docs = {};
+    this.queue = this.queue.filter((q) => !isTrashed((docs[q.card.dir] ??= this.sync.load(q.card.dir).doc), q.card.id));
     const now = Date.now();
     let i = this.queue.findIndex((q) => q.readyAt <= now);
-    if (i < 0 && this.queue.length) {
-      // Only cards still in their learning step are left: show the earliest one.
+    if (i < 0 && early && this.queue.length) {
       i = this.queue.reduce((best, q, k) => (q.readyAt < this.queue[best].readyAt ? k : best), 0);
     }
     this.current = i >= 0 ? this.queue.splice(i, 1)[0].card : null;
     this.revealed = false;
+    if (!this.current && this.queue.length) {
+      const wait = Math.min(...this.queue.map((q) => q.readyAt)) - now;
+      this.waitTimer = setTimeout(() => !this.root.hidden && this._next(), Math.max(0, wait) + 500);
+    }
     this._render();
+  }
+
+  /** Move the current card to the trash (it keeps its review state; undo from the toast). */
+  trashCurrent() {
+    const card = this.current;
+    if (!card) return;
+    setTrashed(this.sync, card, true);
+    toast('Card moved to the trash', {
+      action: {
+        label: 'Undo',
+        fn: () => {
+          setTrashed(this.sync, card, false);
+          if (this.current) this.queue.unshift({ card: this.current, readyAt: 0 });
+          this.stop();
+          this.current = card;
+          this.revealed = false;
+          this._render();
+        },
+      },
+    });
+    this._next();
   }
 
   rate(rating) {
@@ -206,6 +257,9 @@ export class ReviewSession {
     $('#review-undo').addEventListener('click', () => this.undo());
     $('#review-back').addEventListener('click', () => this.onExit());
     $('#review-finish').addEventListener('click', () => this.onExit());
+    $('#review-trash').addEventListener('click', () => this.trashCurrent());
+    $('#review-early').addEventListener('click', () => this._next({ early: true }));
+    $('#review-open-trash').addEventListener('click', () => this.decks && this.trash.open(this.decks));
     const bar = $('#review-ratings');
     for (const r of RATINGS) {
       bar.append(
@@ -218,7 +272,7 @@ export class ReviewSession {
       );
     }
     document.addEventListener('keydown', (e) => {
-      if (this.root.hidden || e.target.closest?.('input, textarea, select') || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (this.root.hidden || this.trash.dialog.open || e.target.closest?.('input, textarea, select') || e.metaKey || e.ctrlKey || e.altKey) return;
       if ((e.key === ' ' || e.key === 'Enter') && !this.revealed) {
         e.preventDefault();
         this.reveal();
@@ -228,6 +282,9 @@ export class ReviewSession {
       } else if (e.key === ' ' && this.revealed) {
         e.preventDefault();
         this.rate(Rating.Good);
+      } else if (e.key === 'Delete') {
+        e.preventDefault();
+        this.trashCurrent();
       } else if (e.key === 'z' || e.key === 'u') {
         this.undo();
       } else if (e.key === 'Escape') {
@@ -243,9 +300,17 @@ export class ReviewSession {
     $('#review-count').textContent = card ? `${remaining} left · ${this.done} done today` : '';
     $('#review-done').hidden = !!card;
     $('#review-stage').hidden = !card;
+    $('#review-trash').disabled = !card;
+    const trashed = this.decks ? summarize(this.decks, this.sync).trashed : 0;
+    $('#review-open-trash').hidden = trashed === 0;
+    $('#review-open-trash').textContent = `Trash (${trashed})`;
     if (!card) {
-      $('#review-done-text').textContent =
-        this.done === 0 ? 'Nothing to review right now.' : `You reviewed ${this.done} ${this.done === 1 ? 'card' : 'cards'} today.`;
+      const waiting = this.queue.length;
+      const reviewed = this.done === 0 ? '' : `You reviewed ${this.done} ${this.done === 1 ? 'card' : 'cards'} today. `;
+      $('#review-done-text').textContent = waiting
+        ? `${reviewed}${waiting} ${waiting === 1 ? 'card comes' : 'cards come'} back in ${humanInterval(Math.max(0, Math.min(...this.queue.map((q) => q.readyAt)) - Date.now()))}, after ${waiting === 1 ? 'its' : 'their'} learning step: the review goes on by itself.`
+        : reviewed || 'Nothing to review right now.';
+      $('#review-early').hidden = !waiting;
       return;
     }
     const doc = this.sync.load(card.dir).doc;
@@ -266,6 +331,56 @@ export class ReviewSession {
         b.querySelector('.rate-ivl').textContent = humanInterval(clamp(preview[r].card.due.getTime() - now.getTime(), 0, Infinity));
       }
     }
+  }
+}
+
+/** Put a card in the trash or take it out (synced at once, like an answer). */
+export function setTrashed(sync, card, trashed) {
+  sync.mutate(card.dir, (d) => (d.trash[card.id] = { id: card.id, trashed, updatedAt: Date.now() }), { silent: true });
+}
+
+/** The trash: cards kept with their review state but never reviewed, each one restorable. */
+export class TrashDialog {
+  constructor({ sync, onChange = () => {} }) {
+    this.sync = sync;
+    this.onChange = onChange;
+    this.decks = null;
+    this.dialog = $('#trash-dialog');
+    $('#trash-close').addEventListener('click', () => this.dialog.close());
+    $('#trash-restore-all').addEventListener('click', () => {
+      for (const card of this._cards()) setTrashed(this.sync, card, false);
+      this._draw();
+    });
+    this.dialog.addEventListener('close', () => this.onChange());
+  }
+
+  _cards() {
+    return (this.decks?.cards || []).filter((c) => isTrashed(this.sync.load(c.dir).doc, c.id));
+  }
+
+  async open(decks) {
+    this.decks = decks;
+    await loadMath();
+    this._draw();
+    if (!this.dialog.open) this.dialog.showModal();
+  }
+
+  _draw() {
+    const cards = this._cards();
+    $('#trash-empty').hidden = cards.length > 0;
+    $('#trash-restore-all').hidden = cards.length < 2;
+    $('#trash-list').replaceChildren(
+      ...cards.map((card) => {
+        const front = el('div', { class: 'trash-front' });
+        renderRich(front, card.front);
+        return el(
+          'li',
+          { class: 'trash-item' },
+          el('div', { class: 'trash-body' }, el('p', { class: 'review-meta' }, [card.deck, card.stem].filter(Boolean).join(' · ')), front),
+          el('button', { type: 'button', class: 'btn btn-ghost', onclick: () => { setTrashed(this.sync, card, false); this._draw(); } }, 'Restore'),
+        );
+      }),
+    );
   }
 }
 

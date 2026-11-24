@@ -567,6 +567,17 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0
 }
 .review-done { align-self: center; display: grid; justify-items: center; gap: 14px; text-align: center; padding: 40px 16px; }
 .review-done p { font-size: 18px; margin: 0; }
+.review-done .panel-actions { justify-content: center; }
+.trash-dialog { width: min(640px, calc(100% - 24px)); max-height: calc(100dvh - 48px); }
+.trash-list { list-style: none; margin: 12px 0; padding: 0; display: grid; gap: 10px; }
+.trash-item {
+  display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 12px;
+  background: var(--bg); overflow-wrap: anywhere;
+}
+.trash-body { flex: 1; min-width: 0; }
+.trash-body .review-meta { margin: 0 0 6px; }
+.trash-front { font-size: 15px; line-height: 1.5; }
+.trash-front .math-display { overflow-x: auto; overflow-y: hidden; }
 .done-mark { width: 56px; height: 56px; fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 @media (max-width: 720px) {
   .rate { min-height: 62px; }

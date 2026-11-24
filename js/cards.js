@@ -5,10 +5,11 @@
 // session file (e.g. S003.tsv) unlock when that session is ticked in the
 // PROGRESS.md next to the folder; other files (ERR-..., HL-..., legacy EVID-...)
 // are always on. Review state is stored in "<folder>/progress.json" and synced
-// like annotations.
+// like annotations, together with the trash: cards moved there keep their review
+// state but never enter a review until they are restored.
 
 import { fsrs, generatorParameters, createEmptyCard, Rating, State } from '../vendor/ts-fsrs/ts-fsrs.mjs';
-import { dirName, storage } from './util.js?v=3974aaa3e5ae';
+import { dirName, storage } from './util.js?v=3046ab5f78c9';
 
 export { Rating, State };
 
@@ -17,7 +18,8 @@ const SESSION_STEM_RE = /^[A-Z]\d{2,4}$/;
 export const NEW_PER_DAY = 20;
 const LEARN_AHEAD_MS = 20 * 60 * 1000;
 const DAY_ROLLOVER_HOURS = 4;
-const AUTO_SYNC_DELAY_MS = 45000; // reviews are frequent: batch them into fewer commits
+const AUTO_SYNC_DELAY_MS = 300; // push every answer at once, so another device (or a reopened page) never sees it undone
+const TRASH_TTL_MS = 60 * 24 * 3600 * 1000; // restored-card markers are kept this long, so the restore wins on every device
 
 export const scheduler = fsrs(generatorParameters({ request_retention: 0.9, enable_fuzz: true }));
 
@@ -111,13 +113,13 @@ export function progressPath(dir) {
 }
 
 function emptyProgress(dir) {
-  return { version: 1, dir, cards: {}, days: {} };
+  return { version: 1, dir, cards: {}, trash: {}, days: {} };
 }
 
 const num = (v, lo, hi) => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
 
 function sanitizeState(s) {
-  if (!s || typeof s !== 'object' || typeof s.id !== 'string' || !/^c[a-z0-9]{1,16}x*$/.test(s.id)) return null;
+  if (!s || typeof s !== 'object' || typeof s.id !== 'string' || !CARD_ID_RE.test(s.id)) return null;
   if (!num(s.due, 0, 1e14) || !num(s.state, 0, 3) || !num(s.updatedAt, 0, 1e14)) return null;
   return {
     id: s.id,
@@ -135,6 +137,14 @@ function sanitizeState(s) {
   };
 }
 
+const CARD_ID_RE = /^c[a-z0-9]{1,16}x*$/;
+
+function sanitizeTrash(t) {
+  if (!t || typeof t !== 'object' || typeof t.id !== 'string' || !CARD_ID_RE.test(t.id)) return null;
+  if (typeof t.trashed !== 'boolean' || !num(t.updatedAt, 0, 1e14)) return null;
+  return { id: t.id, trashed: t.trashed, updatedAt: t.updatedAt };
+}
+
 function reviveProgress(raw, dir) {
   const doc = emptyProgress(dir);
   if (!raw || typeof raw !== 'object') return doc;
@@ -142,6 +152,11 @@ function reviveProgress(raw, dir) {
   for (const item of list.slice(0, 100000)) {
     const s = sanitizeState(item);
     if (s) doc.cards[s.id] = s;
+  }
+  const trash = Array.isArray(raw.trash) ? raw.trash : Object.values(raw.trash && typeof raw.trash === 'object' ? raw.trash : {});
+  for (const item of trash.slice(0, 100000)) {
+    const t = sanitizeTrash(item);
+    if (t) doc.trash[t.id] = t;
   }
   if (raw.days && typeof raw.days === 'object') {
     for (const [day, perDevice] of Object.entries(raw.days)) {
@@ -163,6 +178,11 @@ function mergeProgress(local, remote) {
     const b = remote.cards[id];
     out.cards[id] = !a ? b : !b ? a : a.updatedAt >= b.updatedAt ? a : b;
   }
+  for (const id of new Set([...Object.keys(local.trash), ...Object.keys(remote.trash)])) {
+    const a = local.trash[id];
+    const b = remote.trash[id];
+    out.trash[id] = !a ? b : !b ? a : a.updatedAt >= b.updatedAt ? a : b;
+  }
   for (const day of new Set([...Object.keys(local.days), ...Object.keys(remote.days)])) {
     out.days[day] = {};
     for (const device of new Set([...Object.keys(local.days[day] || {}), ...Object.keys(remote.days[day] || {})])) {
@@ -180,9 +200,14 @@ function serializeProgress(doc) {
   const cards = Object.values(doc.cards)
     .sort((a, b) => (a.id < b.id ? -1 : 1))
     .map((c) => `    ${JSON.stringify(Object.fromEntries(STATE_KEYS.map((k) => [k, c[k] ?? null])))}`);
+  const now = Date.now();
+  const trash = Object.values(doc.trash)
+    .filter((t) => t.trashed || now - t.updatedAt < TRASH_TTL_MS)
+    .sort((a, b) => (a.id < b.id ? -1 : 1))
+    .map((t) => `    ${JSON.stringify({ id: t.id, trashed: t.trashed, updatedAt: t.updatedAt })}`);
   const days = Object.keys(doc.days).sort().slice(-400);
   const dayLines = days.map((d) => `    ${JSON.stringify(d)}: ${JSON.stringify(doc.days[d])}`);
-  return `{\n  "version": 1,\n  "cards": [\n${cards.join(',\n')}\n  ],\n  "days": {\n${dayLines.join(',\n')}\n  }\n}\n`;
+  return `{\n  "version": 1,\n  "cards": [\n${cards.join(',\n')}\n  ],\n  "trash": [\n${trash.join(',\n')}\n  ],\n  "days": {\n${dayLines.join(',\n')}\n  }\n}\n`;
 }
 
 export const progressCodec = {
@@ -193,8 +218,8 @@ export const progressCodec = {
   revive: reviveProgress,
   merge: mergeProgress,
   serialize: serializeProgress,
-  isEmpty: (doc) => Object.keys(doc.cards).length === 0,
-  toStorage: (doc) => ({ ...doc, cards: Object.values(doc.cards) }),
+  isEmpty: (doc) => Object.keys(doc.cards).length === 0 && Object.keys(doc.trash).length === 0,
+  toStorage: (doc) => ({ ...doc, cards: Object.values(doc.cards), trash: Object.values(doc.trash) }),
   message: () => 'reader: flashcard review',
 };
 
@@ -253,6 +278,11 @@ export function fromFsrsCard(id, c) {
     last_review: c.last_review ? c.last_review.getTime() : null,
     updatedAt: Date.now(),
   };
+}
+
+/** Is a card in the trash (kept, but never reviewed)? */
+export function isTrashed(doc, id) {
+  return doc.trash?.[id]?.trashed === true;
 }
 
 export function isNew(s) {

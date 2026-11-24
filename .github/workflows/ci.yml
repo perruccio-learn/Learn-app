@@ -1,4 +1,4 @@
-# Tests on every push and pull request; deploys to GitHub Pages only from main and only if the tests pass.
+# Tests on every push and pull request; deploys to GitHub Pages only from main (push or manual run) and only if the tests pass.
 # Actions are pinned to full commit SHAs (supply-chain safety); the comment shows the tag.
 name: Test and deploy
 
@@ -45,17 +45,13 @@ jobs:
         working-directory: tests
         run: node run-all.mjs
 
-  deploy:
+  # Build and deploy are separate jobs (GitHub's reference layout): deploy-pages runs only after the
+  # artifact upload has finished and is listed. In one job it sometimes found no artifact (24/11/2026).
+  build:
     needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -72,5 +68,16 @@ jobs:
         with:
           path: _site
 
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
